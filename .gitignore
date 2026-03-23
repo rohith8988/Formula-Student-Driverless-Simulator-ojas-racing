@@ -1,0 +1,58 @@
+# ── Editor & IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Claude Code ───────────────────────────────────────────────────────────────
+.claude/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── C++ / CMake build ─────────────────────────────────────────────────────────
+build/
+devel/
+install/
+log/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.so
+*.a
+*.o
+
+# ── ROS2 / Colcon ─────────────────────────────────────────────────────────────
+COLCON_IGNORE
+install_manifest.txt
+
+# ── Gazebo generated worlds ───────────────────────────────────────────────────
+# Generated at runtime — never commit these
+simulator/fs_track/worlds/generated/*.world
+simulator/fs_track/worlds/generated/*.yaml
+# Keep the .gitkeep so the directory exists in the repo
+!simulator/fs_track/worlds/generated/.gitkeep
+
+# Custom user maps are local — ignore everything except the .gitkeep
+simulator/fs_track/worlds/maps/*.world
+simulator/fs_track/worlds/maps/*.sdf
+!simulator/fs_track/worlds/maps/.gitkeep
+
+# ── OS noise ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

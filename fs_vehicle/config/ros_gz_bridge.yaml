@@ -1,0 +1,46 @@
+# ros_gz_bridge — control/state topics only
+# Low-bandwidth topics: commands, odometry, TF, joint states, IMU, clock.
+# Sensor topics (LiDAR, camera) are in ros_gz_bridge_sensors.yaml running
+# as a separate bridge node so sensor serialisation never blocks control data.
+
+# ── Teleop / cmd_vel ──────────────────────────────────────────────────
+- ros_topic_name: "/cmd_vel"
+  gz_topic_name:  "/cmd_vel"
+  ros_type_name:  "geometry_msgs/msg/Twist"
+  gz_type_name:   "gz.msgs.Twist"
+  direction: ROS_TO_GZ
+
+# ── Wheel odometry ────────────────────────────────────────────────────
+- ros_topic_name: "/odometry/wheels"
+  gz_topic_name:  "/odometry/wheels"
+  ros_type_name:  "nav_msgs/msg/Odometry"
+  gz_type_name:   "gz.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+# ── TF (odom -> base_link) ────────────────────────────────────────────
+- ros_topic_name: "/tf"
+  gz_topic_name:  "/tf"
+  ros_type_name:  "tf2_msgs/msg/TFMessage"
+  gz_type_name:   "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# ── Joint states ──────────────────────────────────────────────────────
+- ros_topic_name: "/joint_states"
+  gz_topic_name:  "/world/fs_world/model/fs_car/joint_state"
+  ros_type_name:  "sensor_msgs/msg/JointState"
+  gz_type_name:   "gz.msgs.Model"
+  direction: GZ_TO_ROS
+
+# ── IMU ───────────────────────────────────────────────────────────────
+- ros_topic_name: "/imu/data"
+  gz_topic_name:  "/imu/data"
+  ros_type_name:  "sensor_msgs/msg/Imu"
+  gz_type_name:   "gz.msgs.IMU"
+  direction: GZ_TO_ROS
+
+# ── Clock (sim time) ──────────────────────────────────────────────────
+- ros_topic_name: "/clock"
+  gz_topic_name:  "/clock"
+  ros_type_name:  "rosgraph_msgs/msg/Clock"
+  gz_type_name:   "gz.msgs.Clock"
+  direction: GZ_TO_ROS

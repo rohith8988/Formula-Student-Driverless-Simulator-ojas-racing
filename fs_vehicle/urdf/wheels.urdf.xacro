@@ -1,0 +1,127 @@
+<?xml version="1.0"?>
+<robot name="wheels" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="wheels" params="chassis_width:=1.6 wheelbase:=1.580">
+
+    <xacro:property name="PI"             value="3.14159265358979"/>
+    <xacro:property name="wheel_radius"   value="0.2032"/>
+    <xacro:property name="wheel_width"    value="0.2"/>
+    <xacro:property name="wheel_mass"     value="10.0"/>
+    <xacro:property name="hinge_mass"     value="1.0"/>
+    <!-- Max steer angle ~28 deg, matches FSG minimum turn radius -->
+    <xacro:property name="steering_limit" value="0.5"/>
+
+    <!-- ── Single wheel link ───────────────────────────────────────── -->
+    <xacro:macro name="wheel_link" params="name lr_prefix">
+      <link name="${name}">
+        <inertial>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <mass value="${wheel_mass}"/>
+          <inertia ixx="0.3" ixy="0" ixz="0"
+                   iyy="0.2" iyz="0"
+                   izz="0.2"/>
+        </inertial>
+        <visual>
+          <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+          <geometry>
+            <mesh filename="file://$(find fs_vehicle)/meshes/wheel_${lr_prefix}.dae"/>
+          </geometry>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+          <geometry>
+            <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+          </geometry>
+        </collision>
+      </link>
+
+      <!-- Rubber tyre friction.
+           Both <ode> and <bullet> blocks are required: DART reads <ode>,
+           Bullet Featherstone reads <bullet> and ignores <ode> entirely. -->
+      <gazebo reference="${name}">
+        <collision name="collision">
+          <surface>
+            <friction>
+              <ode>
+                <mu>2.0</mu>
+                <mu2>2.0</mu2>
+              </ode>
+              <bullet>
+                <friction>2.0</friction>
+                <friction2>2.0</friction2>
+                <rolling_friction>0.01</rolling_friction>
+              </bullet>
+            </friction>
+            <contact>
+              <ode>
+                <kp>1e8</kp>
+                <kd>1.0</kd>
+                <min_depth>0.003</min_depth>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+      </gazebo>
+    </xacro:macro>
+
+    <!-- ── Front wheel (with steering hinge) ──────────────────────── -->
+    <xacro:macro name="front_wheel" params="lr_prefix side_sign">
+
+      <!-- Steering hinge between chassis and hinge link -->
+      <joint name="${lr_prefix}_steering_hinge_joint" type="revolute">
+        <origin xyz="${wheelbase/2}
+                     ${side_sign * (chassis_width - wheel_width) / 2}
+                     0"
+                rpy="0 0 0"/>
+        <parent link="chassis"/>
+        <child link="${lr_prefix}_steering_hinge"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="${-steering_limit}" upper="${steering_limit}"
+               effort="10000" velocity="10"/>
+        <dynamics damping="0.5" friction="0.1"/>
+      </joint>
+
+      <link name="${lr_prefix}_steering_hinge">
+        <inertial>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <mass value="${hinge_mass}"/>
+          <inertia ixx="0.04" ixy="0" ixz="0"
+                   iyy="0.04" iyz="0"
+                   izz="0.04"/>
+        </inertial>
+      </link>
+
+      <!-- Continuous spin joint between hinge and wheel -->
+      <joint name="${lr_prefix}_front_wheel_joint" type="continuous">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <parent link="${lr_prefix}_steering_hinge"/>
+        <child link="${lr_prefix}_front_wheel"/>
+        <axis xyz="0 1 0"/>
+      </joint>
+
+      <xacro:wheel_link name="${lr_prefix}_front_wheel" lr_prefix="${lr_prefix}"/>
+    </xacro:macro>
+
+    <!-- ── Rear wheel ──────────────────────────────────────────────── -->
+    <xacro:macro name="rear_wheel" params="lr_prefix side_sign">
+      <joint name="${lr_prefix}_rear_wheel_joint" type="continuous">
+        <origin xyz="${-wheelbase/2}
+                     ${side_sign * (chassis_width - wheel_width) / 2}
+                     0"
+                rpy="0 0 0"/>
+        <parent link="chassis"/>
+        <child link="${lr_prefix}_rear_wheel"/>
+        <axis xyz="0 1 0"/>
+      </joint>
+
+      <xacro:wheel_link name="${lr_prefix}_rear_wheel" lr_prefix="${lr_prefix}"/>
+    </xacro:macro>
+
+    <!-- ── Instantiate all four wheels ────────────────────────────── -->
+    <xacro:front_wheel lr_prefix="left"  side_sign="1"/>
+    <xacro:front_wheel lr_prefix="right" side_sign="-1"/>
+    <xacro:rear_wheel  lr_prefix="left"  side_sign="1"/>
+    <xacro:rear_wheel  lr_prefix="right" side_sign="-1"/>
+
+  </xacro:macro>
+</robot>

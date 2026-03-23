@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""
+ps_teleop
+─────────
+Forza Horizon-style PS4/PS5 controller → /cmd_vel for the FS car simulator.
+
+─── Axis layout (Linux hid-sony driver, USB or Bluetooth) ───────────────────
+  Axis 0   Left stick X        left=−1 … right=+1
+  Axis 2   L2 / LT trigger     −1=released … +1=fully pressed
+  Axis 3   Right stick X       left=−1 … right=+1   (camera — not supported)
+  Axis 4   Right stick Y       up=−1   … down=+1     (camera — not supported)
+  Axis 5   R2 / RT trigger     −1=released … +1=fully pressed
+
+─── Button layout ────────────────────────────────────────────────────────────
+  Button 0   Cross  / A       handbrake
+  Button 1   Circle / B       reset / recover        (not supported)
+  Button 2   Square / X       boost                  (not supported)
+  Button 3   Triangle / Y     camera toggle          (not supported)
+  Button 4   L1 / LB          shift down / clutch    (not supported)
+  Button 5   R1 / RB          shift up               (not supported)
+  Button 8   Share / Back     HUD / debug toggle     (not supported)
+  Button 9   Options / Start  pause                  (not supported)
+
+─── Driving logic ────────────────────────────────────────────────────────────
+  Throttle (R2):  analog, 0–1 mapped to 0–max_speed
+  Brake/Reverse (L2):
+    • When moving forward: acts as brake (reduces speed toward zero)
+    • When nearly stopped and L2 still pressed: becomes reverse
+    • Formula: linear.x = (R2 − L2) × speed_limit
+      The Ackermann plugin's speed ramp decelerates before going negative,
+      giving the same feel as Forza Horizon.
+  Steering (left stick X):
+    • Speed-sensitive: full lock at low speed, reduced at high speed
+    • Formula: gain = 1 / (1 + 0.06 × |commanded_speed|)
+      → full sensitivity at 0 m/s, ~50% at 17 m/s, ~33% at 33 m/s
+  Handbrake (Cross / A):
+    • Immediately overrides throttle and commands zero speed
+"""
+
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from sensor_msgs.msg import Joy
+from geometry_msgs.msg import Twist
+
+
+# Buttons that are read but have no simulator backend.
+# Pressing these logs a one-time message so you know they are registered.
+_UNIMPLEMENTED = {
+    1: 'Circle / B  — reset/recover  (no reset service in this simulator)',
+    2: 'Square / X  — boost          (no boost system in this simulator)',
+    3: 'Triangle / Y — camera toggle (no camera control topic)',
+    4: 'L1 / LB     — shift down     (no transmission — direct velocity control)',
+    5: 'R1 / RB     — shift up       (no transmission — direct velocity control)',
+    8: 'Share / Back — HUD toggle    (not wired up in this simulator)',
+    9: 'Options / Start — pause      (not wired up in this simulator)',
+}
+
+
+class PsTeleop(Node):
+
+    def __init__(self) -> None:
+        super().__init__('ps_teleop')
+
+        # ── Parameters ──────────────────────────────────────────────────────
+        self.declare_parameter('max_speed',   15.0)  # m/s at full R2 press
+        self.declare_parameter('max_reverse',  5.0)  # m/s at full L2 reverse
+        self.declare_parameter('max_angular',  4.0)  # rad/s at full stick deflection
+
+        self._max_speed   = self.get_parameter('max_speed').value
+        self._max_reverse = self.get_parameter('max_reverse').value
+        self._max_angular = self.get_parameter('max_angular').value
+
+        # Track the last commanded speed so the steering gain has a speed proxy
+        self._last_speed: float = 0.0
+
+        # Track which unsupported buttons have already been announced
+        self._logged_buttons: set[int] = set()
+
+        self._pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self._sub = self.create_subscription(Joy, '/joy', self._on_joy, 10)
+
+        self.get_logger().info(
+            f'Forza-style teleop ready  '
+            f'max_speed={self._max_speed} m/s  '
+            f'max_reverse={self._max_reverse} m/s'
+        )
+        self.get_logger().info(
+            'Controls: R2=throttle  L2=brake/reverse  '
+            'left-stick=steer  Cross=handbrake'
+        )
+
+    # ── Low-level helpers ─────────────────────────────────────────────────────
+
+    def _axis(self, msg: Joy, i: int) -> float:
+        return msg.axes[i] if i < len(msg.axes) else 0.0
+
+    def _button(self, msg: Joy, i: int) -> bool:
+        return bool(msg.buttons[i]) if i < len(msg.buttons) else False
+
+    def _trigger(self, msg: Joy, i: int) -> float:
+        """Convert trigger axis (−1=off, +1=full) to 0.0–1.0.
+
+        max(0, raw) maps the uninitialised state (raw=0 before first press)
+        to 0.0 so the car does not creep at startup.
+        """
+        return max(0.0, self._axis(msg, i))
+
+    # ── Joy callback ─────────────────────────────────────────────────────────
+
+    def _on_joy(self, msg: Joy) -> None:
+
+        # Log unsupported buttons once so the user knows they are registered
+        for btn_index, description in _UNIMPLEMENTED.items():
+            if self._button(msg, btn_index) and btn_index not in self._logged_buttons:
+                self._logged_buttons.add(btn_index)
+                self.get_logger().info(f'[not implemented] {description}')
+
+        twist = Twist()
+
+        # ── Handbrake: Cross / A (button 0) ──────────────────────────────────
+        # Immediately commands zero speed. The Ackermann plugin decelerates the
+        # car at max_decel (8 m/s²). Steering stays active during handbrake.
+        if self._button(msg, 0):
+            self._last_speed = 0.0
+            # twist.linear.x is already 0.0
+
+        else:
+            # ── Throttle / Brake / Reverse (Forza-style) ─────────────────────
+            #
+            # R2 (axis 5) = throttle:  0 = no gas,   1 = full gas
+            # L2 (axis 2) = brake:     0 = no brake, 1 = full brake
+            #
+            # net = R2 − L2  (range −1.0 to +1.0)
+            # • Positive net → drive forward at net × max_speed
+            # • Negative net → brake or reverse at net × max_reverse
+            #
+            # The Ackermann plugin's speed ramp (4 m/s² accel, 8 m/s² decel)
+            # handles the smooth transition: the car decelerates first before
+            # going into reverse, just like Forza Horizon.
+
+            throttle = self._trigger(msg, 2)  # R2
+            brake    = self._trigger(msg, 5)  # L2
+            net      = throttle - brake       # −1.0 … +1.0
+
+            if net >= 0.0:
+                twist.linear.x = net * self._max_speed    # forward
+            else:
+                twist.linear.x = net * self._max_reverse  # brake / reverse
+
+            self._last_speed = twist.linear.x
+
+        # ── Speed-sensitive steering ──────────────────────────────────────────
+        # Full lock at low speed (responsive in hairpins).
+        # Reduced sensitivity at high speed (stable on straights).
+        #
+        # gain = 1 / (1 + 0.06 × |speed|)
+        #   0 m/s  → gain = 1.00  (full lock)
+        #  17 m/s  → gain = 0.50  (half sensitivity)
+        #  33 m/s  → gain = 0.33  (one-third sensitivity)
+        speed_gain = 1.0 / (1.0 + 0.06 * abs(self._last_speed))
+
+        # Left stick X (axis 0): left=−1, right=+1.
+        # Negate so stick-left → positive angular.z → left turn (ROS convention).
+        twist.angular.z = self._axis(msg, 0) * self._max_angular * speed_gain
+
+        self._pub.publish(twist)
+
+
+def main() -> None:
+    rclpy.init()
+    node = PsTeleop()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

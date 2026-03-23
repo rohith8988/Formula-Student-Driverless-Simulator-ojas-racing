@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!--
+  fs_car.urdf.xacro
+  ─────────────────
+  Formula Student car URDF for ROS2 Jazzy + Gazebo Sim 8 (Harmonic).
+
+  Mesh:    EUFS racecar "lando" body (from QUT-Motorsport/eufs_sim)
+  Drive:   Ackermann steering  (gz-sim-ackermann-steering-system)
+  Sensors: 32-ch LiDAR · front camera · IMU
+  Bridge:  see config/ros_gz_bridge.yaml for topic mappings
+-->
+<robot name="fs_car" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ── Sub-components ─────────────────────────────────────────── -->
+  <xacro:include filename="$(find fs_vehicle)/urdf/chassis.urdf.xacro"/>
+  <xacro:include filename="$(find fs_vehicle)/urdf/wheels.urdf.xacro"/>
+  <xacro:include filename="$(find fs_vehicle)/urdf/sensors.urdf.xacro"/>
+  <!-- ── Assemble car ───────────────────────────────────────────── -->
+  <xacro:chassis base_frame="base_link"/>
+  <xacro:wheels  chassis_width="1.6" wheelbase="1.580"/>
+
+  <!--
+    Sensor mount positions (chassis origin = centre of wheelbase):
+      IMU    — at chassis centre,              0.0   0.0  0.0
+      LiDAR  — AMZ-style nose pylon position,  1.45  0.0  0.25
+               (front_wing_joint 1.45,0,-0.13 + lidar_joint 0,0,0.38 combined)
+               Absolute height = 0.203 + 0.25 = 0.453 m
+               -3° pitch down for optimal short-range cone detection.
+      Camera — rear of cockpit surround,      -0.37  0.0  0.90
+  -->
+  <xacro:imu_sensor    parent="chassis" xyz="0.0   0.0  0.0"/>
+  <xacro:lidar_sensor  parent="chassis" xyz="1.45  0.0  0.25" rpy="0 -0.052 0"/>
+  <xacro:camera_sensor parent="chassis" xyz="-0.37 0.0  0.90"/>
+
+  <!-- ── Gazebo Harmonic plugins ────────────────────────────────── -->
+
+  <!--
+    AckermannSteering
+    • Drives rear wheels (like a real FS car — RWD)
+    • Steers front wheels via hinge joints
+    • Subscribes to gz topic /cmd_ackermann (AckermannDriveStamped)
+    • Publishes odometry to /odometry/wheels
+  -->
+  <gazebo>
+    <plugin filename="gz-sim-ackermann-steering-system"
+            name="gz::sim::systems::AckermannSteering">
+      <left_joint>left_rear_wheel_joint</left_joint>
+      <right_joint>right_rear_wheel_joint</right_joint>
+      <left_steering_joint>left_steering_hinge_joint</left_steering_joint>
+      <right_steering_joint>right_steering_hinge_joint</right_steering_joint>
+      <kingpin_width>1.4</kingpin_width>
+      <steering_limit>0.5</steering_limit>
+      <wheel_base>1.58</wheel_base>
+      <wheel_radius>0.2032</wheel_radius>
+      <min_velocity>-5.0</min_velocity>
+      <max_velocity>30.0</max_velocity>
+      <min_acceleration>-8.0</min_acceleration>
+      <max_acceleration>4.0</max_acceleration>
+      <topic>/cmd_ackermann</topic>
+      <odom_topic>/odometry/wheels</odom_topic>
+      <tf_topic>/tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+      <odom_publish_frequency>50</odom_publish_frequency>
+    </plugin>
+  </gazebo>
+
+  <!--
+    FsAckermannDrive — custom gz-sim8 plugin (fs_vehicle_plugins package).
+    • Subscribes to /cmd_vel (gz.msgs.Twist, bridged from ROS2)
+    • Drives rear wheels via JointVelocityCmd
+    • Steers front hinge joints via Ackermann geometry + P-velocity controller
+    Use teleop_twist_keyboard on /cmd_vel for manual testing.
+  -->
+  <gazebo>
+    <plugin filename="FsAckermannDrive"
+            name="fs_plugins::FsAckermannDrive">
+      <topic>/cmd_vel</topic>
+      <wheel_radius>0.2032</wheel_radius>
+      <wheel_base>1.58</wheel_base>
+      <!-- wheel_sep: kingpin-to-kingpin = chassis_width(1.6) - wheel_width(0.2) -->
+      <wheel_sep>1.4</wheel_sep>
+      <max_steer>0.5</max_steer>
+      <steer_kp>8.0</steer_kp>
+      <max_steer_rate>3.0</max_steer_rate>
+      <!-- FS car: ~0.4 g accel, ~0.8 g brake -->
+      <max_accel>4.0</max_accel>
+      <max_decel>8.0</max_decel>
+    </plugin>
+  </gazebo>
+
+  <!--
+    JointStatePublisher
+    Publishes all joint positions/velocities to:
+    /world/fs_world/model/fs_car/joint_state  (gz.msgs.Model)
+    — bridged to /joint_states (sensor_msgs/JointState) via ros_gz_bridge
+  -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher"/>
+  </gazebo>
+
+</robot>

@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<!--
+  front_wing.urdf.xacro
+  ─────────────────────
+  Simplified Formula Student front wing with centre LiDAR pylon.
+
+  Coordinate frame (chassis origin = wheelbase centre, z up):
+    Wing joint  →  xyz="0.95 0 -0.13"  (ahead of front axle, near ground)
+    Absolute wing height = wheel_radius(0.203) - 0.13 = 0.073 m
+
+  Wing → LiDAR offset: z = +0.38 m
+    Absolute LiDAR height = 0.073 + 0.38 = 0.453 m  (AMZ-style ~0.4–0.5 m)
+
+  Structure (all visual-only primitives):
+    • Main wing element    — 1.0 m span × 0.20 m chord × 0.035 m thick
+    • Left / right endplates — thin vertical slabs at wing tips
+    • Support struts (×2)   — thin cylinders connecting wing to chassis nose
+    • Centre pylon          — vertical cylinder rising 0.32 m above wing
+    • Mount plate           — small disc at pylon top that seats the LiDAR
+-->
+<robot name="front_wing" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="front_wing" params="parent">
+
+    <!-- ── Wing base joint ──────────────────────────────────────── -->
+    <joint name="front_wing_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="front_wing_link"/>
+      <!-- 1.45 m forward of wheelbase centre (0.66 m ahead of front axle)  -->
+      <!-- → wing well clear of nose tip, LiDAR pylon fully visible         -->
+      <!-- → main wing surface at 0.203 - 0.13 = 0.073 m above ground      -->
+      <origin xyz="1.45 0 -0.13" rpy="0 0 0"/>
+    </joint>
+
+    <link name="front_wing_link">
+      <inertial>
+        <mass value="1.5"/>
+        <inertia ixx="0.08" ixy="0" ixz="0"
+                 iyy="0.01" iyz="0"
+                 izz="0.08"/>
+      </inertial>
+
+      <!-- ── Main wing surface ─────────────────────────────────── -->
+      <visual name="wing_main">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <!-- chord(x) × span(y) × thickness(z) -->
+          <box size="0.20 1.00 0.035"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.08 0.08 0.08 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── Left endplate ────────────────────────────────────── -->
+      <visual name="endplate_left">
+        <origin xyz="0 0.505 0.08" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.22 0.012 0.18"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.08 0.08 0.08 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── Right endplate ───────────────────────────────────── -->
+      <visual name="endplate_right">
+        <origin xyz="0 -0.505 0.08" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.22 0.012 0.18"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.08 0.08 0.08 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── Left support strut (wing → chassis nose) ─────────── -->
+      <!-- Runs diagonally: starts 0.32 m back and 0.18 m up from wing -->
+      <visual name="strut_left">
+        <origin xyz="-0.16 0.22 0.10" rpy="0 -0.55 0"/>
+        <geometry>
+          <cylinder radius="0.012" length="0.36"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.08 0.08 0.08 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── Right support strut ──────────────────────────────── -->
+      <visual name="strut_right">
+        <origin xyz="-0.16 -0.22 0.10" rpy="0 -0.55 0"/>
+        <geometry>
+          <cylinder radius="0.012" length="0.36"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.08 0.08 0.08 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── Centre LiDAR pylon ───────────────────────────────── -->
+      <!-- Rises 0.32 m from the top of the wing surface          -->
+      <visual name="lidar_pylon">
+        <origin xyz="0 0 0.1975" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.018" length="0.32"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.12 0.12 0.12 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── LiDAR mounting plate at pylon top ────────────────── -->
+      <visual name="lidar_mount_plate">
+        <origin xyz="0 0 0.367" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.055" length="0.014"/>
+        </geometry>
+        <material name="carbon">
+          <color rgba="0.18 0.18 0.18 1.0"/>
+        </material>
+      </visual>
+
+      <!-- ── Collision (main wing only — endplates/pylon omitted) -->
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.20 1.00 0.035"/>
+        </geometry>
+      </collision>
+    </link>
+
+  </xacro:macro>
+
+</robot>

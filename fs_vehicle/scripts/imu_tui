@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""IMU data visualiser for the FS simulator.
+
+Subscribes to /imu/data and renders a live terminal panel showing:
+  - Orientation as Euler angles (roll / pitch / yaw)
+  - Angular velocity (roll / pitch / yaw rates)
+  - Linear acceleration (forward / lateral / vertical)
+  - Sparkline history for yaw rate, longitudinal and lateral acceleration
+
+Run:
+    ros2 run fs_vehicle imu_tui
+"""
+
+from __future__ import annotations
+
+import math
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass
+
+import rclpy
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+from sensor_msgs.msg import Imu
+
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Vertical
+from textual.widgets import Footer, Header, Label, Sparkline, Static
+
+
+# ── quaternion → euler (ZYX / aerospace) ─────────────────────────────────────
+
+def _quat_to_euler(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
+    sinr = 2.0 * (w * x + y * z)
+    cosr = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr, cosr)
+    sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = math.asin(sinp)
+    siny = 2.0 * (w * z + x * y)
+    cosy = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny, cosy)
+    return math.degrees(roll), math.degrees(pitch), math.degrees(yaw)
+
+
+# ── thread-safe store ─────────────────────────────────────────────────────────
+
+@dataclass
+class ImuSnapshot:
+    roll_deg:  float = 0.0
+    pitch_deg: float = 0.0
+    yaw_deg:   float = 0.0
+    wx: float = 0.0
+    wy: float = 0.0
+    wz: float = 0.0
+    ax: float = 0.0
+    ay: float = 0.0
+    az: float = 0.0
+    hz:        float = 0.0
+    age_ms:    float = 0.0
+    connected: bool  = False
+
+
+class ImuStore:
+    _HZ_A  = 0.08
+    _STALE = 500.0   # ms
+
+    def __init__(self) -> None:
+        self._lock   = threading.Lock()
+        self._snap   = ImuSnapshot()
+        self._last   = 0.0
+        self._hz     = 0.0
+
+    def update(self, msg: Imu) -> None:
+        now = time.monotonic()
+        r, p, y = _quat_to_euler(
+            msg.orientation.x, msg.orientation.y,
+            msg.orientation.z, msg.orientation.w,
+        )
+        with self._lock:
+            dt = now - self._last
+            if self._last > 0.0 and dt > 0.0:
+                self._hz = self._hz * (1 - self._HZ_A) + (1.0 / dt) * self._HZ_A
+            self._last = now
+            self._snap = ImuSnapshot(
+                roll_deg=r, pitch_deg=p, yaw_deg=y,
+                wx=msg.angular_velocity.x,
+                wy=msg.angular_velocity.y,
+                wz=msg.angular_velocity.z,
+                ax=msg.linear_acceleration.x,
+                ay=msg.linear_acceleration.y,
+                az=msg.linear_acceleration.z,
+                hz=self._hz,
+                connected=True,
+            )
+
+    def get(self) -> ImuSnapshot:
+        with self._lock:
+            snap = self._snap
+            last = self._last
+        if last > 0.0:
+            snap.age_ms   = (time.monotonic() - last) * 1000.0
+            snap.connected = snap.age_ms < self._STALE
+        return snap
+
+
+# ── ROS node ──────────────────────────────────────────────────────────────────
+
+class ImuNode(Node):
+    def __init__(self, store: ImuStore) -> None:
+        super().__init__("imu_tui_node")
+        self._store = store
+        self.create_subscription(Imu, "/imu/data", self._cb, 10)
+
+    def _cb(self, msg: Imu) -> None:
+        self._store.update(msg)
+
+
+# ── bar renderer ──────────────────────────────────────────────────────────────
+
+def _bar(value: float, lo: float, hi: float, half: int = 12) -> str:
+    """Centered Rich-markup bar. half = number of chars each side of centre."""
+    centre    = (lo + hi) / 2.0
+    half_span = max((hi - lo) / 2.0, 1e-9)
+    norm      = max(-1.0, min(1.0, (value - centre) / half_span))
+    filled    = int(abs(norm) * half)
+
+    if norm >= 0.0:
+        left  = "░" * half
+        right = "█" * filled + "░" * (half - filled)
+    else:
+        left  = "░" * (half - filled) + "█" * filled
+        right = "░" * half
+
+    colour = "green" if abs(norm) < 0.50 else ("yellow" if abs(norm) < 0.85 else "red")
+    return f"[{colour}]{left}▌{right}[/]"
+
+
+# ── widgets ───────────────────────────────────────────────────────────────────
+
+class StatusBar(Static):
+    def refresh_status(self, snap: ImuSnapshot) -> None:
+        if snap.connected:
+            dot    = "[bold green]●[/]"
+            hz_str = f"[green]{snap.hz:5.1f} Hz[/]"
+            age    = f"[white]{snap.age_ms:3.0f} ms[/]"
+        else:
+            dot    = "[bold red]○  waiting for /imu/data ...[/]"
+            hz_str = ""
+            age    = ""
+        line = f" {dot}"
+        if snap.connected:
+            line += f"  [bold]/imu/data[/]  {hz_str}  age {age}"
+        self.update(line)
+
+
+class MeterRow(Static):
+    """  label   +value unit   [░░░░░█░░░░░]"""
+
+    def __init__(self, label: str, unit: str, lo: float, hi: float, **kw) -> None:
+        super().__init__(**kw)
+        self._label = label
+        self._unit  = unit
+        self._lo    = lo
+        self._hi    = hi
+        self.update(self._format(0.0))
+
+    def _format(self, value: float) -> str:
+        sign = "+" if value >= 0 else ""
+        return (
+            f"  [bold cyan]{self._label:<14}[/]"
+            f"[white]{sign}{value:7.3f} {self._unit:<5}[/]"
+            f"  {_bar(value, self._lo, self._hi)}"
+        )
+
+    def refresh_value(self, value: float) -> None:
+        self.update(self._format(value))
+
+
+# ── CSS ───────────────────────────────────────────────────────────────────────
+
+CSS = """
+Screen       { background: $surface; }
+#status      { height: 1; padding: 0 0; border-bottom: solid $primary; }
+.title       { text-style: bold; color: $accent; padding: 0 1; margin-top: 1; }
+.meter       { height: 1; }
+.spark-label { color: $text-muted; padding: 0 1; margin-top: 1; }
+Sparkline    { height: 5; margin: 0 1 0 1; }
+"""
+
+
+# ── app ───────────────────────────────────────────────────────────────────────
+
+_HIST     = 120
+_REFRESH  = 20   # Hz
+
+
+class ImuTui(App[None]):
+    TITLE    = "FS IMU Monitor"
+    CSS      = CSS
+    BINDINGS = [Binding("q", "quit", "Quit")]
+
+    def __init__(self, store: ImuStore) -> None:
+        super().__init__()
+        self._store  = store
+        # offset so sparklines stay non-negative (offset = zero baseline)
+        self._wz_h: deque[float] = deque([3.0]  * _HIST, maxlen=_HIST)
+        self._ax_h: deque[float] = deque([20.0] * _HIST, maxlen=_HIST)
+        self._ay_h: deque[float] = deque([20.0] * _HIST, maxlen=_HIST)
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield StatusBar(id="status")
+
+        with Vertical():
+            # ── orientation
+            yield Label("── ORIENTATION ──────────────────────────────", classes="title")
+            yield MeterRow("Roll    (X)", "°",    -180, 180, classes="meter", id="m-roll")
+            yield MeterRow("Pitch   (Y)", "°",     -90,  90, classes="meter", id="m-pitch")
+            yield MeterRow("Yaw     (Z)", "°",    -180, 180, classes="meter", id="m-yaw")
+
+            # ── angular velocity
+            yield Label("── ANGULAR VELOCITY ─────────────────────────", classes="title")
+            yield MeterRow("ω Roll  (X)", "r/s",   -3,   3,  classes="meter", id="m-wx")
+            yield MeterRow("ω Pitch (Y)", "r/s",   -3,   3,  classes="meter", id="m-wy")
+            yield MeterRow("ω Yaw   (Z)", "r/s",   -3,   3,  classes="meter", id="m-wz")
+
+            # ── linear acceleration
+            yield Label("── LINEAR ACCELERATION ──────────────────────", classes="title")
+            yield MeterRow("Fwd/Bwd (X)", "m/s²", -20,  20,  classes="meter", id="m-ax")
+            yield MeterRow("Left/Rt (Y)", "m/s²", -20,  20,  classes="meter", id="m-ay")
+            yield MeterRow("Vertical(Z)", "m/s²",   0,  20,  classes="meter", id="m-az")
+
+            # ── sparklines
+            yield Label("── YAW RATE  ω_z  (rad/s, baseline=0)", classes="spark-label")
+            yield Sparkline(list(self._wz_h), id="sp-wz")
+
+            yield Label("── LONGITUDINAL ACCEL  a_x  (m/s², baseline=0)", classes="spark-label")
+            yield Sparkline(list(self._ax_h), id="sp-ax")
+
+            yield Label("── LATERAL ACCEL  a_y  (m/s², baseline=0)", classes="spark-label")
+            yield Sparkline(list(self._ay_h), id="sp-ay")
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.set_interval(1.0 / _REFRESH, self._tick)
+
+    def _tick(self) -> None:
+        snap = self._store.get()
+
+        self.query_one(StatusBar).refresh_status(snap)
+
+        self.query_one("#m-roll",  MeterRow).refresh_value(snap.roll_deg)
+        self.query_one("#m-pitch", MeterRow).refresh_value(snap.pitch_deg)
+        self.query_one("#m-yaw",   MeterRow).refresh_value(snap.yaw_deg)
+
+        self.query_one("#m-wx",    MeterRow).refresh_value(snap.wx)
+        self.query_one("#m-wy",    MeterRow).refresh_value(snap.wy)
+        self.query_one("#m-wz",    MeterRow).refresh_value(snap.wz)
+
+        self.query_one("#m-ax",    MeterRow).refresh_value(snap.ax)
+        self.query_one("#m-ay",    MeterRow).refresh_value(snap.ay)
+        self.query_one("#m-az",    MeterRow).refresh_value(snap.az)
+
+        self._wz_h.append(snap.wz + 3.0)
+        self._ax_h.append(snap.ax + 20.0)
+        self._ay_h.append(snap.ay + 20.0)
+
+        self.query_one("#sp-wz", Sparkline).data = list(self._wz_h)
+        self.query_one("#sp-ax", Sparkline).data = list(self._ax_h)
+        self.query_one("#sp-ay", Sparkline).data = list(self._ay_h)
+
+
+# ── entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    rclpy.init()
+    store    = ImuStore()
+    node     = ImuNode(store)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
+
+    try:
+        ImuTui(store).run()
+    finally:
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

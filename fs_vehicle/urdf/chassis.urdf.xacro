@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<robot name="chassis" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="chassis" params="base_frame:=base_link">
+
+    <xacro:property name="wheel_radius" value="0.2032"/>
+
+    <!-- Base footprint — zero-mass reference frame at ground level -->
+    <link name="${base_frame}"/>
+
+    <joint name="chassis_joint" type="fixed">
+      <parent link="${base_frame}"/>
+      <child link="chassis"/>
+      <!-- Raise chassis by one wheel radius so wheels touch ground -->
+      <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="chassis">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://$(find fs_vehicle)/meshes/lando.dae"/>
+        </geometry>
+      </visual>
+      <inertial>
+        <!-- 140 kg FS car, centre of mass at geometric centre -->
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="140"/>
+        <inertia ixx="16.3" ixy="0" ixz="0"
+                 iyy="33.6" iyz="0"
+                 izz="47.9"/>
+      </inertial>
+      <collision>
+        <!-- Simplified box collision — much faster than mesh collision -->
+        <origin xyz="0 0 0.1" rpy="0 0 0"/>
+        <geometry>
+          <box size="3.0 1.4 0.5"/>
+        </geometry>
+      </collision>
+    </link>
+
+  </xacro:macro>
+</robot>
