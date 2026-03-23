@@ -67,13 +67,8 @@ Generates FSG-spec race tracks, spawns a sensor-equipped formula car, and expose
 
 ### RViz2 — Sensor Visualisation
 <!-- SCREENSHOT: RViz2 showing LiDAR point cloud, camera feed, TF tree -->
-> 📸 *[Screenshot — RViz2 with LiDAR point cloud and camera]*
+> <img width="3353" height="1769" alt="image" src="https://github.com/user-attachments/assets/dd9f1b57-1be2-4a0c-a3b9-fb9104db72e9" />
 
----
-
-### Cone Physics
-<!-- GIF or SHORT VIDEO: Car knocking cones over -->
-> 🎬 *[GIF — car hitting cones]*
 
 ---
 
