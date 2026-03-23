@@ -7,14 +7,16 @@ Generates FSG-spec race tracks, spawns a sensor-equipped formula car, and expose
 ---
 
 <!-- SCREENSHOT: TUI control panel (full terminal view) -->
-> 📸 *[Screenshot — TUI control panel]*
+> <img width="3179" height="1903" alt="image" src="https://github.com/user-attachments/assets/09f893fb-e067-4d58-93ed-fe586b144289" />
+
 
 ---
 
 ## Overview
 
 <!-- SCREENSHOT or SHORT GIF: Gazebo simulation running with trackdrive layout, car driving -->
-> 🎬 *[Video / GIF — Gazebo trackdrive simulation]*
+> ![2026-03-23 15-15-30](https://github.com/user-attachments/assets/7ff816a1-5b40-4ab8-85fd-405a5d1cbaec)
+
 
 ---
 
@@ -44,7 +46,8 @@ Generates FSG-spec race tracks, spawns a sensor-equipped formula car, and expose
 
 ### TUI Control Panel
 <!-- SCREENSHOT: TUI with simulation running, log output visible -->
-> 📸 *[Screenshot — TUI running with log output]*
+> <img width="3199" height="1905" alt="image" src="https://github.com/user-attachments/assets/c28de1af-df23-4095-97b3-a069a093deba" />
+
 
 ---
 
@@ -53,12 +56,12 @@ Generates FSG-spec race tracks, spawns a sensor-equipped formula car, and expose
 | Trackdrive (~450 m) | Test Track (~300 m) |
 |---|---|
 | <!-- SCREENSHOT: Trackdrive in Gazebo --> | <!-- SCREENSHOT: Test Track in Gazebo --> |
-| 📸 *[Screenshot]* | 📸 *[Screenshot]* |
+| <img width="3353" height="1769" alt="image" src="https://github.com/user-attachments/assets/c393c4b1-20bc-471f-b01f-6c4ba2661b4a" /> | <img width="3353" height="1769" alt="image" src="https://github.com/user-attachments/assets/67bbea31-f9a3-4e0b-8f6c-fed2456faec3" /> |
 
 | Skidpad (figure-8) | Acceleration (75 m) |
 |---|---|
 | <!-- SCREENSHOT: Skidpad in Gazebo --> | <!-- SCREENSHOT: Acceleration in Gazebo --> |
-| 📸 *[Screenshot]* | 📸 *[Screenshot]* |
+| <img width="3353" height="1769" alt="image" src="https://github.com/user-attachments/assets/71b30713-c70c-47ce-ae51-cb076544e804" /> | <img width="3353" height="1769" alt="image" src="https://github.com/user-attachments/assets/6d6dc6eb-186c-4edf-b46b-d01a60236df0" /> |
 
 ---
 
@@ -71,16 +74,6 @@ Generates FSG-spec race tracks, spawns a sensor-equipped formula car, and expose
 ### Cone Physics
 <!-- GIF or SHORT VIDEO: Car knocking cones over -->
 > 🎬 *[GIF — car hitting cones]*
-
----
-
-## Demo Videos
-
-<!-- VIDEO: Full lap on trackdrive with autonomous stack -->
-> 🎬 *[Video — autonomous lap on Trackdrive]*
-
-<!-- VIDEO: TUI walkthrough — launch to stop -->
-> 🎬 *[Video — TUI walkthrough]*
 
 ---
 
