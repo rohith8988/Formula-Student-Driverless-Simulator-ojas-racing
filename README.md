@@ -120,9 +120,6 @@ source install/setup.bash
 ros2 run simulator fs_tui
 ```
 
-<!-- SCREENSHOT: TUI on first launch (stopped state) -->
-> 📸 *[Screenshot — TUI on first launch]*
-
 ### Direct launch
 ```bash
 # Generate and launch a trackdrive
